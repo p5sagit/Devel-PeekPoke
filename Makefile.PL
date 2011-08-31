@@ -16,8 +16,8 @@ if ($use_pp and ($] =~ /^5.(\d{3})/)[0] % 2) {
 # the XS version should work fine on 5.6
 perl_version $use_pp ? '5.008001' : '5.006';
 
-test_requires 'Test::More'      => '0.92';
-test_requires 'Test::Exception' => '0.31';
+test_requires 'Test::More'      => '0.88';  # done testing
+test_requires 'Test::Exception' => '0.31';  # non-segfaulting caller()
 
 all_from 'lib/Devel/PeekPoke.pm';
 
