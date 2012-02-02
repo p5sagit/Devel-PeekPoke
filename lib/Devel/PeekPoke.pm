@@ -191,12 +191,14 @@ for (values %$ctrl_names) {
 
 sub describe_bytestring {
   my ($bytes, $start_addr) = @_;
-  $start_addr ||= 0;
+
+  require Devel::PeekPoke::BigInt;
+  $start_addr = Devel::PeekPoke::BigInt->new($start_addr || 0);
 
   my $len = length($bytes);
 
-  my $max_addr_hexsize = length (sprintf ('%x', $start_addr + $len));
-  $max_addr_hexsize = 7 if $max_addr_hexsize < 7; # to match perl itself
+  my $max_addr_hexsize = length ( ($start_addr + $len)->as_unmarked_hex );
+  $max_addr_hexsize = 7 if $max_addr_hexsize < 7; # to match perl itself (minimum 7 digits)
   my $addr_hdr_pad = ' ' x ($max_addr_hexsize + 3);
 
   my @out = (
@@ -222,8 +224,8 @@ sub describe_bytestring {
   for my $off (0 .. $len - 1) {
     my $byte = substr $bytes, $off, 1;
     my ($val) = unpack ('C', $byte);
-    push @out, sprintf( "0x%0${max_addr_hexsize}x   %02X % 4d % 4o  %s  %s",
-      $start_addr + $off,
+    push @out, sprintf( "0x%0${max_addr_hexsize}s   %02X % 4d % 4o  %s  %s",
+      ($start_addr + $off)->as_unmarked_hex,
       ($val) x 3,
       unpack('B8', $byte),
       $ctrl_names->{$val} || ( $val > 127 ? sprintf('"\%o"', $val) : "  $byte   " ),
@@ -261,7 +263,8 @@ sub describe_bytestring {
       if @ints;
   }
 
-  join "\n", @out;
+  s/\s+$// for @out;
+  join "\n", @out, '';
 }
 
 =head1 AUTHOR

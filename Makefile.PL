@@ -13,7 +13,7 @@ if ($use_pp and ($] =~ /^5.(\d{3})/)[0] % 2) {
   die "Instalation will need Devel::PeekPoke::PP, which does not work (by design) on development perls ($])\n";
 }
 
-# the XS version should work fine on 5.6
+# the XS version (when written) should work fine on 5.6
 perl_version $use_pp ? '5.008001' : '5.006';
 
 test_requires 'Test::More'      => '0.88';  # done testing
