@@ -12,7 +12,7 @@ use Devel::PeekPoke::Constants qw/PTR_SIZE PTR_PACK_TYPE/;
 use B (); # for B::PV
 
 # we do not support every perl, as we rely on the implementation of SV/SvPV
-BEGIN { eval "sub __PERLVER () { $] }" };
+BEGIN { eval "sub __PERLVER () { '$]' }" };
 
 my ($svsize, $svu_offset, $xpv_size);
 # we know we start from 5.8.1
@@ -42,7 +42,7 @@ sub _pack_address {
 
   # FIXME - is there a saner way to check for overflows?
   no warnings 'portable'; # hex() with a 64bit value
-  croak "Your system does not support addresses larger than 0x$max_addr, you supplied $_[0]"
+  croak "Your system does not support addresses larger than 0x$max_addr, you supplied $digits"
     if ( $_[0] > hex($max_addr) or uc(unpack('H*', $p)) eq $max_addr );
 
   return $p;
@@ -92,13 +92,24 @@ sub poke {
     substr( $sv_contents, 0, PTR_SIZE) = pack ('P', $xpv_contents );  # replace xpv in sv
   }
 
-  my $new_sv_ref = \ unpack( PTR_PACK_TYPE, pack( 'P', $sv_contents ) );
-  my $artificial_string = bless( $new_sv_ref, 'B::PV' )->object_2svref;
+  my $artificial_string = do {
+    # it is crucial to create a copy of $sv_contents, and work with a temporary
+    # memory location. Otherwise perl memory allocation will kick in and wreak
+    # considerable havoc culminating with an inevitable segfault
+    bless(
+      \ unpack(
+        PTR_PACK_TYPE,
+        do { no warnings 'pack'; pack( 'P', $sv_contents.'' ) },
+      ),
+      'B::PV',
+    )->object_2svref;
+  };
 
   # now when we write to the newly created "string" we are actually writing
   # to $location
   # note we HAVE to use lvalue substr - a plain assignment will add a \0
   substr($$artificial_string, 0, $len) = $bytes;
+
   return $len;
 }
 
