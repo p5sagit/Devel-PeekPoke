@@ -16,6 +16,9 @@ is( peek($str_pv_addr, $len + 1), $str . "\0", 'peek as expected (with NUL termi
 is( poke($str_pv_addr+5, 'itig'), 4, 'poke success and correct RV' );
 is( $str, 'for mitigation and mayhem', 'original changed' );
 
+is( poke($str_pv_addr+1, 'u'), 1, 'second poke success and correct RV' );
+is( $str, 'fur mitigation and mayhem', 'original changed again' );
+
 my $addr = do { no warnings 'portable'; hex('DEADBEEF' x (PTR_SIZE/4)) };
 is( poke_address ($str_pv_addr, $addr), PTR_SIZE, 'poke_address works and correct RV' );
 is( peek_address ($str_pv_addr), $addr, 'peek_address works' );
