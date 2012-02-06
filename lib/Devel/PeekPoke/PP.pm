@@ -11,28 +11,35 @@ use Config;
 use Devel::PeekPoke::Constants qw/PTR_SIZE PTR_PACK_TYPE/;
 use B (); # for B::PV
 
-# we do not support every perl, as we rely on the implementation of SV/SvPV
-BEGIN { eval "sub __PERLVER () { '$]' }" };
+use constant {
+  _MAX_ADDR => 'FF' x PTR_SIZE,
+  _PERLVERSION => "$]", # we do not support every perl, as we rely on the implementation of SV/SvPV
+};
 
-my ($svsize, $svu_offset, $xpv_size);
-# we know we start from 5.8.1
-if ( (__PERLVER =~ /^5\.(\d{3})/)[0] % 2 ) {
-  die "@{[ __PACKAGE__ ]} does not function on development perl versions (by design)\n";
+BEGIN {
+  # we know we start from 5.8.1
+  if ( (_PERLVERSION =~ /^5\.(\d{3})/)[0] % 2 ) {
+    die "@{[ __PACKAGE__ ]} does not function on development perl versions (by design)\n";
+  }
+  elsif (_PERLVERSION < 5.010) {
+    constant->import({
+      _SV_SIZE => PTR_SIZE + 4 + 4,  # SvANY + 32bit refcnt + 32bit flags
+      _XPV_SIZE => PTR_SIZE + $Config{sizesize} + $Config{sizesize}, # PVX ptr + cur + len
+      _SVU_OFFSET => 0,
+    });
+  }
+  elsif (_PERLVERSION < 5.016) {
+    constant->import({
+      _SV_SIZE => PTR_SIZE + 4 + 4 + $Config{ivsize},  # SvANY + 32bit refcnt + 32bit flags + SV_U
+      _XPV_SIZE => undef, # it isn't really undefined, we just do not care
+      _SVU_OFFSET => PTR_SIZE + 4 + 4,
+    });
+  }
+  else {
+    # do not take any chanes with not-yet-released perls - things may change
+    die "@{[ __PACKAGE__ ]} does not *yet* support this perl $], please file a bugreport (it is very very easy to fix)\n";
+  }
 }
-elsif (__PERLVER < 5.010) {
-  $svsize = PTR_SIZE + 4 + 4; # SvANY + 32bit refcnt + 32bit flags
-  $xpv_size = PTR_SIZE + $Config{sizesize} + $Config{sizesize}; # PVX ptr + cur + len
-}
-elsif (__PERLVER < 5.016) {
-  $svsize = PTR_SIZE + 4 + 4 + $Config{ivsize}; # SvANY + 32bit refcnt + 32bit flags + SV_U
-  $svu_offset = PTR_SIZE + 4 + 4;
-}
-else {
-  # do not take any chanes with not-yet-released perls - things may change
-  die "@{[ __PACKAGE__ ]} does not *yet* support this perl $], please file a bugreport (it is very very easy to fix)\n";
-}
-
-my $max_addr = ('FF' x PTR_SIZE);
 
 sub _pack_address {
   my ($digits) = (defined $_[0] and $_[0] =~ /^(\d+)$/)
@@ -42,8 +49,8 @@ sub _pack_address {
 
   # FIXME - is there a saner way to check for overflows?
   no warnings 'portable'; # hex() with a 64bit value
-  croak "Your system does not support addresses larger than 0x$max_addr, you supplied $digits"
-    if ( $_[0] > hex($max_addr) or uc(unpack('H*', $p)) eq $max_addr );
+  croak "Your system does not support addresses larger than 0x@{[ _MAX_ADDR ]}, you supplied $digits"
+    if ( $_[0] > hex(_MAX_ADDR) or uc(unpack('H*', $p)) eq _MAX_ADDR );
 
   return $p;
 }
@@ -74,41 +81,37 @@ sub poke {
   # this should be constant once we pass the regex check above... right?
   my $len = length($bytes);
 
-  # construct a B::PV object, backed by a SV/SvPV to a dummy string lenth($bytes)
-  # long, and subtitute $location as the actual string storage
+  # construct a B::PV object, backed by a SV/SvPV to a dummy string length($bytes)
+  # long, and substitute $location as the actual string storage
   # we specifically use the same length so we do not have to deal with resizing
-  my $sv_ref = \( 'X' x $len );
-  my $sv_contents = peek($sv_ref+0, $svsize);
-  my $xpv_contents;
+  my $dummy = 'X' x $len;
+  my $dummy_addr = \$dummy + 0;
 
-  if (defined $svu_offset) {  # new style 5.10+ SVs
-    substr( $sv_contents, $svu_offset, PTR_SIZE ) = _pack_address($location);
-  }
-  else {  # 5.8 xpv stuff
-    my $xpv_addr = unpack(PTR_PACK_TYPE, peek($sv_ref+0, PTR_SIZE) );
-    my $xpv_contents = peek( $xpv_addr, $xpv_size ); # we do not care about cur/len
+  my $ghost_sv_contents = peek($dummy_addr, _SV_SIZE);
+
+  if (_XPV_SIZE) {  # 5.8 xpv stuff
+    my $xpv_addr = unpack(PTR_PACK_TYPE, peek($dummy_addr, PTR_SIZE) );
+    my $xpv_contents = peek( $xpv_addr, _XPV_SIZE ); # we do not care about cur/len (they will be the same)
 
     substr( $xpv_contents, 0, PTR_SIZE ) = _pack_address($location);  # replace pvx in xpv with sanity-checked $location
-    substr( $sv_contents, 0, PTR_SIZE) = pack ('P', $xpv_contents );  # replace xpv in sv
+    substr( $ghost_sv_contents, 0, PTR_SIZE) = pack ('P', $xpv_contents );  # replace xpv in sv
+  }
+  else { # new style 5.10+ SVs
+    substr( $ghost_sv_contents, _SVU_OFFSET, PTR_SIZE ) = _pack_address($location);
   }
 
-  my $artificial_string = do {
+  my $ghost_string_ref = bless( \ unpack(
+    PTR_PACK_TYPE,
     # it is crucial to create a copy of $sv_contents, and work with a temporary
     # memory location. Otherwise perl memory allocation will kick in and wreak
     # considerable havoc culminating with an inevitable segfault
-    bless(
-      \ unpack(
-        PTR_PACK_TYPE,
-        do { no warnings 'pack'; pack( 'P', $sv_contents.'' ) },
-      ),
-      'B::PV',
-    )->object_2svref;
-  };
+    do { no warnings 'pack'; pack( 'P', $ghost_sv_contents.'' ) },
+  ), 'B::PV' )->object_2svref;
 
   # now when we write to the newly created "string" we are actually writing
   # to $location
   # note we HAVE to use lvalue substr - a plain assignment will add a \0
-  substr($$artificial_string, 0, $len) = $bytes;
+  substr($$ghost_string_ref, 0, $len) = $bytes;
 
   return $len;
 }
