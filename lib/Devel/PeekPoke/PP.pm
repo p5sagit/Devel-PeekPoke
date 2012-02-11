@@ -69,6 +69,9 @@ sub poke {
   my($location, $bytes) = @_;
   croak "Poke where and what?" unless (defined $location) and (defined $bytes);
 
+  # sanity check and properly pack address
+  my $addr = _pack_address($location);
+
   # sanity check is (imho) warranted as described here:
   # http://blogs.perl.org/users/aristotle/2011/08/utf8-flag.html#comment-36499
   if (utf8::is_utf8($bytes) and $bytes  =~ /([^\x00-\x7F])/) {
@@ -93,11 +96,11 @@ sub poke {
     my $xpv_addr = unpack(PTR_PACK_TYPE, peek($dummy_addr, PTR_SIZE) );
     my $xpv_contents = peek( $xpv_addr, _XPV_SIZE ); # we do not care about cur/len (they will be the same)
 
-    substr( $xpv_contents, 0, PTR_SIZE ) = _pack_address($location);  # replace pvx in xpv with sanity-checked $location
+    substr( $xpv_contents, 0, PTR_SIZE ) = $addr;  # replace pvx in xpv with the "string buffer" location
     substr( $ghost_sv_contents, 0, PTR_SIZE) = pack ('P', $xpv_contents );  # replace xpv in sv
   }
   else { # new style 5.10+ SVs
-    substr( $ghost_sv_contents, _SVU_OFFSET, PTR_SIZE ) = _pack_address($location);
+    substr( $ghost_sv_contents, _SVU_OFFSET, PTR_SIZE ) = $addr;
   }
 
   my $ghost_string_ref = bless( \ unpack(
@@ -111,7 +114,10 @@ sub poke {
   # now when we write to the newly created "string" we are actually writing
   # to $location
   # note we HAVE to use lvalue substr - a plain assignment will add a \0
-  substr($$ghost_string_ref, 0, $len) = $bytes;
+  #
+  # Also in order to keep threading on perl 5.8.x happy we *have* to perform this
+  # in a string eval. I don't have the slightest idea why :)
+  eval 'substr($$ghost_string_ref, 0, $len) = $bytes';
 
   return $len;
 }

@@ -4,14 +4,19 @@ use warnings;
 # T::M appears to leak, emit the TAP by hand
 #use Test::More 'no_plan';
 
-my $tests = 0;
 sub is {
-  $tests++;
-  printf("%s %u - %s\n",
-    ( $_[0] eq $_[1] ? 'ok' : 'not ok' ),
-    $tests,
-    $_[2] || '',
-  );
+  my $str = $_[0] eq $_[1] ? 'ok' : 'not ok';
+
+  {
+    lock($::TEST_COUNT);
+    $::TEST_COUNT++;
+    printf STDOUT ("%s %u - %s\n",
+      $str,
+      $::TEST_COUNT,
+      $_[2] || '',
+    );
+  }
+  threads->yield if $INC{'threads.pm'};
 }
 
 use Devel::PeekPoke qw/peek poke peek_address poke_address/;
@@ -23,7 +28,7 @@ my $str_pv_addr = unpack(PTR_PACK_TYPE, pack('p', $str) );
 
 is( peek($str_pv_addr, $len + 1), $str . "\0", 'peek as expected (with NUL termination)' );
 
-for (1 .. ($ENV{AUTOMATED_TESTING} ? 300 : 20) ) {
+for (1 .. ($ENV{AUTOMATED_TESTING} ? 200 : 20 ) ) {
   for my $poke_size (2 .. $len) {
     my $replace_chunk = 'a' . ( '0' x ($poke_size-1) );
     for my $poke_start ( 0 .. ($len - $poke_size) ) {
@@ -38,7 +43,7 @@ for (1 .. ($ENV{AUTOMATED_TESTING} ? 300 : 20) ) {
   }
 }
 
-if ($ENV{AUTOMATED_TESTING}) {
+if ($ENV{AUTOMATED_TESTING} and ! $INC{'threads.pm'}) {
   my $vsz;
   if (-f "/proc/$$/stat") {
     my $proc_stat = do { local (@ARGV, $/) = "/proc/$$/stat"; <> };
@@ -50,4 +55,4 @@ if ($ENV{AUTOMATED_TESTING}) {
     if $vsz;
 }
 
-print "1..$tests\n";
+print "1..$::TEST_COUNT\n" unless $INC{'threads.pm'};

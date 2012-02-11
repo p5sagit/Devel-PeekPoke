@@ -1,3 +1,4 @@
+    - Fix crashes when used in a threaded environment
     - Fix memory corruption issues by preempting perl garbage collection
       of the artificial string PV
     - Fix describe_bytestring to work correctly with large offsets on
