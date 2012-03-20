@@ -3,7 +3,7 @@ use strict;
 
 use 5.006;
 
-use inc::Module::Install '1.01';
+use inc::Module::Install '1.06';
 
 my $use_pp = $ENV{DEVEL_PEEK_POKE_USE_PP} || ! can_cc();
 
