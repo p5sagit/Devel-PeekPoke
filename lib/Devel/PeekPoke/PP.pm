@@ -14,6 +14,7 @@ use B (); # for B::PV
 use constant {
   _MAX_ADDR => 'FF' x PTR_SIZE,
   _PERLVERSION => "$]", # we do not support every perl, as we rely on the implementation of SV/SvPV
+  _PERLVERSION_MIN => ($] =~ /^5\.(\d{3})/)[0],
 };
 
 sub _pack_address {
@@ -32,8 +33,8 @@ sub _pack_address {
 
 BEGIN {
   # we know we start from 5.8.1
-  if ( (_PERLVERSION =~ /^5\.(\d{3})/)[0] % 2 ) {
-    die "@{[ __PACKAGE__ ]} does not function on development perl versions (by design)\n";
+  if (_PERLVERSION_MIN == 9 ) {
+    die "@{[ __PACKAGE__ ]} does not function on 5.@{[_PERLVERSION_MIN]}_xxx development perls (by design)\n";
   }
   elsif (_PERLVERSION < 5.010) {
     constant->import({
@@ -42,7 +43,7 @@ BEGIN {
       _XPV_ADDR_OFFSET => undef, # it isn't really undefined, we just do not care
     });
   }
-  elsif (_PERLVERSION < 5.016) {
+  elsif (_PERLVERSION < 5.018) {
     # The xpv address is written to the svu_pv, however we may get in trouble
     # due to padding/alignment when ivsize (thus svu) is larger than PTR_SIZE
     constant->import( _XPV_IN_SVU_OFFSET => $Config{ivsize} == PTR_SIZE ? 0 : do {
@@ -74,7 +75,7 @@ BEGIN {
     });
   }
   else {
-    # do not take any chanes with not-yet-released perls - things may change
+    # do not take any chances with not-yet-released perls - things may change
     die "@{[ __PACKAGE__ ]} does not *yet* support this perl $], please file a bugreport (it is very very easy to fix)\n";
   }
 }
