@@ -19,8 +19,12 @@ $|++; # seems to be critical
 share $::TEST_COUNT;
 
 # older perls crash if threads are spawned way too quickly, sleep for 100 msecs
-my @pool = map { sleep 0.1 and threads->create(\&run_torture) } (1..10);
-$_->join for @pool;
+my @pool = map { sleep 0.1 and threads->create(\&run_torture) } (1..($ENV{AUTOMATED_TESTING} ? 20 : 5) );
+for (@pool) {
+  if ($_->join != 42) {
+    die ($_->can('error') ? $_->error : "Thread did not finish successfully" );
+  }
+}
 
 if ($ENV{AUTOMATED_TESTING}) {
   my $vsz;
@@ -37,7 +41,7 @@ if ($ENV{AUTOMATED_TESTING}) {
 print "1..$::TEST_COUNT\n";
 
 sub run_torture {
-  my $src = do { local (@ARGV, $/) = 't/03torture.t'; <>; };
-  eval $src;
+  do 't/03torture.t';
   die $@ if $@ ne '';
+  42;
 }
