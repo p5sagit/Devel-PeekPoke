@@ -16,31 +16,6 @@ use constant {
   _PERLVERSION => "$]", # we do not support every perl, as we rely on the implementation of SV/SvPV
 };
 
-BEGIN {
-  # we know we start from 5.8.1
-  if ( (_PERLVERSION =~ /^5\.(\d{3})/)[0] % 2 ) {
-    die "@{[ __PACKAGE__ ]} does not function on development perl versions (by design)\n";
-  }
-  elsif (_PERLVERSION < 5.010) {
-    constant->import({
-      _SV_SIZE => PTR_SIZE + 4 + 4,  # SvANY + 32bit refcnt + 32bit flags
-      _XPV_SIZE => PTR_SIZE + $Config{sizesize} + $Config{sizesize}, # PVX ptr + cur + len
-      _SVU_OFFSET => 0,
-    });
-  }
-  elsif (_PERLVERSION < 5.016) {
-    constant->import({
-      _SV_SIZE => PTR_SIZE + 4 + 4 + $Config{ivsize},  # SvANY + 32bit refcnt + 32bit flags + SV_U
-      _XPV_SIZE => undef, # it isn't really undefined, we just do not care
-      _SVU_OFFSET => PTR_SIZE + 4 + 4,
-    });
-  }
-  else {
-    # do not take any chanes with not-yet-released perls - things may change
-    die "@{[ __PACKAGE__ ]} does not *yet* support this perl $], please file a bugreport (it is very very easy to fix)\n";
-  }
-}
-
 sub _pack_address {
   my ($digits) = (defined $_[0] and $_[0] =~ /^(\d+)$/)
     or croak "Invalid address '$_[0]' - expecting an integer";
@@ -53,6 +28,55 @@ sub _pack_address {
     if ( $_[0] > hex(_MAX_ADDR) or uc(unpack('H*', $p)) eq _MAX_ADDR );
 
   return $p;
+}
+
+BEGIN {
+  # we know we start from 5.8.1
+  if ( (_PERLVERSION =~ /^5\.(\d{3})/)[0] % 2 ) {
+    die "@{[ __PACKAGE__ ]} does not function on development perl versions (by design)\n";
+  }
+  elsif (_PERLVERSION < 5.010) {
+    constant->import({
+      _SV_SIZE => PTR_SIZE + 4 + 4,  # SvANY + 32bit refcnt + 32bit flags
+      _XPV_SIZE => PTR_SIZE + $Config{sizesize} + $Config{sizesize}, # PVX ptr + cur + len
+      _XPV_ADDR_OFFSET => undef, # it isn't really undefined, we just do not care
+    });
+  }
+  elsif (_PERLVERSION < 5.016) {
+    # The xpv address is written to the svu_pv, however we may get in trouble
+    # due to padding/alignment when ivsize (thus svu) is larger than PTR_SIZE
+    constant->import( _XPV_IN_SVU_OFFSET => $Config{ivsize} == PTR_SIZE ? 0 : do {
+      my $str = 'foo';
+      my $packed_pv_addr = pack('p', $str);
+      my $svu_contents = unpack('P' . $Config{ivsize}, _pack_address(\$str + PTR_SIZE + 4 + 4) );
+
+      my $i = index $svu_contents, $packed_pv_addr;
+      if ($i < 0) {
+        require Devel::Peek;
+        printf STDERR
+          'Unable to locate the XPV address 0x%X within SVU value 0x%s - '
+        . "this can't be right. Please file a bug including this message and "
+        . "a full `perl -V` output (important).\n",
+          unpack(PTR_PACK_TYPE, $packed_pv_addr),
+          join('', map { sprintf '%X', $_ } unpack(PTR_PACK_TYPE . '*', $svu_contents ) ),
+        ;
+        Devel::Peek::Dump($str);
+        exit 1;
+      }
+
+      $i;
+    });
+
+    constant->import({
+      _SV_SIZE => PTR_SIZE + 4 + 4 + $Config{ivsize},  # SvANY + 32bit refcnt + 32bit flags + SV_U
+      _XPV_SIZE => undef, # it isn't really undefined, we just do not care
+      _XPV_ADDR_OFFSET => PTR_SIZE + 4 + 4 + _XPV_IN_SVU_OFFSET(), # so we know where to write directly
+    });
+  }
+  else {
+    # do not take any chanes with not-yet-released perls - things may change
+    die "@{[ __PACKAGE__ ]} does not *yet* support this perl $], please file a bugreport (it is very very easy to fix)\n";
+  }
 }
 
 sub peek {
@@ -100,7 +124,7 @@ sub poke {
     substr( $ghost_sv_contents, 0, PTR_SIZE) = pack ('P', $xpv_contents );  # replace xpv in sv
   }
   else { # new style 5.10+ SVs
-    substr( $ghost_sv_contents, _SVU_OFFSET, PTR_SIZE ) = $addr;
+    substr( $ghost_sv_contents, _XPV_ADDR_OFFSET, PTR_SIZE ) = $addr;
   }
 
   my $ghost_string_ref = bless( \ unpack(

@@ -1,3 +1,5 @@
+    - Fix incorrect operation on some OSes (cygwin) when ptrsize < ivsize
+
 0.02  2012-03-20 09:45 (UTC)
 
     - Fix crashes when used in a threaded environment
