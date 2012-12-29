@@ -28,7 +28,7 @@ my $str_pv_addr = unpack(PTR_PACK_TYPE, pack('p', $str) );
 
 is( peek($str_pv_addr, $len + 1), $str . "\0", 'peek as expected (with NUL termination)' );
 
-for (1 .. ($ENV{AUTOMATED_TESTING} ? 200 : 20 ) ) {
+for (1 .. ($ENV{AUTOMATED_TESTING} ? 200 : 5 ) ) {
   for my $poke_size (2 .. $len) {
     my $replace_chunk = 'a' . ( '0' x ($poke_size-1) );
     for my $poke_start ( 0 .. ($len - $poke_size) ) {
