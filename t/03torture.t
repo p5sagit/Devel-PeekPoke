@@ -29,7 +29,7 @@ sub is {
   threads->yield if $INC{'threads.pm'};
 }
 
-use Devel::PeekPoke qw/peek poke peek_address poke_address/;
+use Devel::PeekPoke qw/peek poke/;
 use Devel::PeekPoke::Constants qw/PTR_SIZE PTR_PACK_TYPE/;
 
 my $str = 'for mutilation and mayhem';
