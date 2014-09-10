@@ -13,6 +13,7 @@ use strict;
 use warnings;
 no warnings 'once';
 use Time::HiRes 'sleep';
+use Cwd 'getcwd';
 
 $|++; # seems to be critical
 
@@ -45,7 +46,7 @@ if ($ENV{AUTOMATED_TESTING}) {
 print "1..$::TEST_COUNT\n";
 
 sub run_torture {
-  do 't/03torture.t';
+  do( ( "@{[ getcwd() ]}/t/03torture.t" =~ /^(.*)$/ )[0] );
   die $@ if $@ ne '';
   42;
 }
