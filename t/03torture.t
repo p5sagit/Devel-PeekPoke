@@ -15,6 +15,16 @@ sub is {
       $::TEST_COUNT,
       $_[2] || '',
     );
+    if ($str ne 'ok') {
+      printf STDERR ("# Failed test #%d at %s line %d
+# %s
+#   ne
+# %s
+"       , $::TEST_COUNT, (caller(0))[1,2],
+        , (map { unpack 'H*', $_ } @_[0,1])
+      );
+    }
+
   }
   threads->yield if $INC{'threads.pm'};
 }
